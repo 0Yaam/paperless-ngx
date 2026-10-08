@@ -62,22 +62,27 @@ class TestPathSecurity:
         with pytest.raises(UnsafeFilePathError):
             validate_path_in_root(target, root)
 
-    @given(
-        st.text(
-            alphabet="abcdefghijklmnopqrstuvwxyz0123456789",
-            min_size=1,
-            max_size=10,
-        ),
-    )
-    @settings(max_examples=50, deadline=None)
-    def test_symlink_escaping_root_rejected(
+    @given(st.lists(_SAFE_COMPONENT_STRATEGY, min_size=1, max_size=5))
+    @settings(max_examples=100, deadline=None)
+    def test_disjoint_paths_outside_root_rejected(
         self,
         tmp_path: Path,
-        name_suffix: str,
+        parts: list[str],
     ) -> None:
-        """Invariant 3: Symlink resolving outside root raises UnsafeFilePathError."""
-        root = tmp_path / f"root_{name_suffix}"
-        outside = tmp_path / f"outside_{name_suffix}"
+        """Invariant 3: Paths resolving in an external hierarchy are rejected."""
+        root = tmp_path / "storage_root"
+        root.mkdir(parents=True, exist_ok=True)
+        outside = tmp_path / "other_hierarchy"
+        outside.mkdir(parents=True, exist_ok=True)
+
+        target = outside.joinpath(*parts)
+        with pytest.raises(UnsafeFilePathError):
+            validate_path_in_root(target, root)
+
+    def test_symlink_escaping_root_rejected(self, tmp_path: Path) -> None:
+        """Symlink invariant: Symlink resolving outside root raises UnsafeFilePathError."""
+        root = tmp_path / "root_sym"
+        outside = tmp_path / "outside_sym"
         root.mkdir(parents=True, exist_ok=True)
         outside.mkdir(parents=True, exist_ok=True)
 
@@ -98,7 +103,7 @@ class TestPathSecurity:
             validate_path_in_root(symlink_in_root, root)
 
     def test_symlink_internal_to_root_accepted(self, tmp_path: Path) -> None:
-        """Invariant 3b: Symlink resolving inside root is accepted."""
+        """Symlink invariant: Symlink resolving inside root is accepted."""
         root = tmp_path / "root_internal"
         root.mkdir(parents=True, exist_ok=True)
 
