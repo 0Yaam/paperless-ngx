@@ -3,7 +3,7 @@
 Đồ án môn **Kiểm thử phần mềm** trên mã nguồn [Paperless-ngx](https://github.com/paperless-ngx/paperless-ngx), áp dụng **K01 — Property-Based Testing**.
 
 - **Project:** https://github.com/users/0Yaam/projects/2
-- **Cycle đang mở:** Cycle 1 — Scope & Property Design
+- **Cycle đang mở:** Cycle 2 — Implement Property Suites; việc thiết kế chưa xong được chuyển tiếp từ Cycle 1.
 - **Baseline upstream:** `da3de299f`
 - **Mục tiêu:** 5 suite độc lập, mỗi suite tối thiểu 3 property; tổng tối thiểu 15 property.
 
@@ -21,12 +21,20 @@
 
 | Cycle | Nội dung                                               | Trạng thái  |
 | ----- | ------------------------------------------------------ | ----------- |
-| 1     | Chốt invariant, strategy, oracle và tiêu chí pass/fail | **Đang mở** |
-| 2     | Viết Hypothesis tests và lệnh chạy độc lập             | Backlog     |
+| 1     | Chốt invariant, strategy, oracle và tiêu chí pass/fail | Đã chốt     |
+| 2     | Viết Hypothesis tests và lệnh chạy độc lập             | **Đang mở** |
 | 3     | Chạy test, lưu counterexample, metrics, defect và RCA  | Backlog     |
 | 4     | Báo cáo, demo tái lập và peer review                   | Backlog     |
 
 ## Quy trình
+
+Tái lập PBT-01/02 với seed cố định (Linux/macOS hoặc CI):
+
+```bash
+uv sync --python 3.12 --group testing --frozen
+uv run --python 3.12 --dev --frozen pytest src/paperless/tests/test_parser_utils.py -k TestPostProcessText --hypothesis-seed=20261008
+uv run --python 3.12 --dev --frozen pytest src/documents/tests/search/test_unicode_normalization.py -k TestTheNormalizer --hypothesis-seed=20261008
+```
 
 1. Nhận việc từ Project, chuyển `Stage` sang `In Progress`.
 2. Tạo branch từ `dev`; mỗi PR xử lý đúng một issue.

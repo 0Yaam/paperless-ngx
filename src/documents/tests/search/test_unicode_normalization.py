@@ -12,6 +12,7 @@ import unicodedata
 from typing import TYPE_CHECKING
 
 import pytest
+from hypothesis import example
 from hypothesis import given
 from hypothesis import settings
 from hypothesis import strategies as st
@@ -50,6 +51,7 @@ class TestTheNormalizer:
         assert normalize_search_text(normalized) == normalized
 
     @given(st.text())
+    @example("か\u3099")
     @settings(max_examples=200)
     def test_normalization_matches_nfc_oracle(self, text: str) -> None:
         assert normalize_search_text(text) == unicodedata.normalize("NFC", text)
@@ -57,9 +59,11 @@ class TestTheNormalizer:
     @given(st.text())
     @settings(max_examples=200)
     def test_canonical_equivalents_normalize_equally(self, text: str) -> None:
+        text = f"が{text}"
         nfc = unicodedata.normalize("NFC", text)
         nfd = unicodedata.normalize("NFD", text)
 
+        assert nfc != nfd
         assert normalize_search_text(nfc) == normalize_search_text(nfd)
 
     def test_it_composes_decomposed_kana(self) -> None:
