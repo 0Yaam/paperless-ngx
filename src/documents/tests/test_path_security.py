@@ -19,11 +19,10 @@ from documents.file_handling import validate_path_in_root
 if TYPE_CHECKING:
     from pathlib import Path
 
+pytestmark = [pytest.mark.django_db]
+
 _SAFE_COMPONENT_STRATEGY = st.text(
-    alphabet=st.characters(
-        whitelist_categories=("Lu", "Ll", "Nd"),
-        whitelist_characters="._-",
-    ),
+    alphabet="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-",
     min_size=1,
     max_size=25,
 ).filter(lambda x: x not in {".", ".."})
@@ -87,6 +86,8 @@ class TestPathSecurity:
 
         symlink_in_root = root / "link_to_outside.pdf"
         try:
+            if symlink_in_root.is_symlink() or symlink_in_root.exists():
+                symlink_in_root.unlink()
             symlink_in_root.symlink_to(secret_file)
         except (OSError, NotImplementedError):
             pytest.skip(
@@ -106,6 +107,8 @@ class TestPathSecurity:
 
         internal_link = root / "link_internal.pdf"
         try:
+            if internal_link.is_symlink() or internal_link.exists():
+                internal_link.unlink()
             internal_link.symlink_to(internal_target)
         except (OSError, NotImplementedError):
             pytest.skip(
