@@ -6,7 +6,7 @@ Scope: K01 Property-Based Testing
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from hypothesis import HealthCheck
@@ -16,6 +16,9 @@ from hypothesis import strategies as st
 
 from documents.file_handling import UnsafeFilePathError
 from documents.file_handling import validate_path_in_root
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 pytestmark = [pytest.mark.django_db]
 
