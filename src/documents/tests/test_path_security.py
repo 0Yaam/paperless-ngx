@@ -6,18 +6,16 @@ Scope: K01 Property-Based Testing
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
+from hypothesis import HealthCheck
 from hypothesis import given
 from hypothesis import settings
 from hypothesis import strategies as st
 
 from documents.file_handling import UnsafeFilePathError
 from documents.file_handling import validate_path_in_root
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 pytestmark = [pytest.mark.django_db]
 
@@ -32,7 +30,11 @@ class TestPathSecurity:
     """Hypothesis properties covering path containment invariants."""
 
     @given(st.lists(_SAFE_COMPONENT_STRATEGY, min_size=1, max_size=5))
-    @settings(max_examples=100, deadline=None)
+    @settings(
+        max_examples=100,
+        deadline=None,
+        suppress_health_check=[HealthCheck.function_scoped_fixture],
+    )
     def test_descendants_inside_root_accepted(
         self,
         tmp_path: Path,
@@ -46,7 +48,11 @@ class TestPathSecurity:
         validate_path_in_root(target, root)
 
     @given(st.integers(min_value=1, max_value=8))
-    @settings(max_examples=100, deadline=None)
+    @settings(
+        max_examples=100,
+        deadline=None,
+        suppress_health_check=[HealthCheck.function_scoped_fixture],
+    )
     def test_traversal_outside_root_rejected(
         self,
         tmp_path: Path,
@@ -63,7 +69,11 @@ class TestPathSecurity:
             validate_path_in_root(target, root)
 
     @given(st.lists(_SAFE_COMPONENT_STRATEGY, min_size=1, max_size=5))
-    @settings(max_examples=100, deadline=None)
+    @settings(
+        max_examples=100,
+        deadline=None,
+        suppress_health_check=[HealthCheck.function_scoped_fixture],
+    )
     def test_disjoint_paths_outside_root_rejected(
         self,
         tmp_path: Path,
