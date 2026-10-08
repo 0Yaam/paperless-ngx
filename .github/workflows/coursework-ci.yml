@@ -59,4 +59,4 @@ jobs:
           enable-cache: true
           python-version: 3.12
       - run: uv sync --python 3.12 --group testing --frozen
-      - run: uv run --python 3.12 --dev --frozen pytest src/documents/tests/search/test_unicode_normalization.py -k TestTheNormalizer
+      - run: uv run --python 3.12 --dev --frozen pytest src/documents/tests/search/test_unicode_normalization.py -k TestTheNormalizer --hypothesis-seed=20261008
