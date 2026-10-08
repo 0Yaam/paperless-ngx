@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+from hypothesis import example
 from hypothesis import given
 from hypothesis import settings
 from hypothesis import strategies as st
@@ -106,20 +107,22 @@ class TestPostProcessText:
         assert post_process_text(source) == expected
 
     @given(st.one_of(st.none(), st.text()))
+    @example("a\0\0b")
     @settings(max_examples=200, deadline=None)
     def test_is_idempotent(self, source: str | None) -> None:
         result = post_process_text(source)
         assert post_process_text(result) == result
 
-    @given(st.text())
+    @given(st.text(), st.text())
     @settings(max_examples=200, deadline=None)
-    def test_removes_nul_characters(self, source: str) -> None:
-        result = post_process_text(source)
+    def test_removes_nul_characters(self, prefix: str, suffix: str) -> None:
+        result = post_process_text(f"{prefix}\0{suffix}")
         assert result is None or "\0" not in result
 
     @given(st.text(alphabet=st.characters(exclude_characters="\0")))
     @settings(max_examples=200, deadline=None)
     def test_preserves_internal_line_boundaries(self, source: str) -> None:
+        source = f"a\n{source}b"
         result = post_process_text(source)
         if result is not None:
             assert re.findall(r"[\r\n]+", result) == re.findall(
