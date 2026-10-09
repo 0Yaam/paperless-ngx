@@ -80,6 +80,18 @@ uv run --python 3.12 --group testing --frozen pytest src/documents/tests/test_pa
 
 Không coi các lệnh này là bằng chứng đã chạy hoặc suite đã tồn tại ở Cycle 1.
 
+### Trạng thái triển khai Cycle 2
+
+Đã bổ sung `TestMimeExtensionProperties` vào file test parser và job PBT-04 vào Coursework CI. P1 kiểm tra Tika bật/tắt và duyệt toàn bộ mapping; P2 kiểm tra membership và biến thể case; P3 dùng registry/bảng alias sinh độc lập, gồm example registry rỗng và default không có alias. Các regression cases kiểm tra fallback không đồng nghĩa MIME được hỗ trợ.
+
+P1/P2 dùng một registry built-in riêng, thay accessor của helper trong context và chặn `RemoteDocumentParser.score` để không đọc cấu hình DB/remote. Không sửa singleton toàn cục nên không cần reset singleton; dependency và settings tự khôi phục khi thoát context. Đây là cách cô lập thay cho phương án reset registry ở phần thiết kế.
+
+Job CI chạy property rồi toàn bộ file parser, seed 13, một worker; lưu môi trường, log và JUnit dưới artifact `pbt-04-evidence`. Chưa có bằng chứng chạy pytest đầy đủ tại thời điểm triển khai local: máy Windows thiếu dependency testing, không có distro Linux phát triển và Docker engine chưa chạy. Checklist duyệt thiết kế vẫn chờ reviewer xác nhận.
+
+Kiểm chứng local ngày 2026-10-09: cú pháp Python và YAML hợp lệ, `git diff --check` không có lỗi whitespace. P3 chạy cô lập trên phần thân AST thực tế của helper/test, với Hypothesis 6.168.5 và Python 3.12: 100 generated examples và 2 explicit examples, seed 13, đều pass. Kiểm tra này không thay thế pytest/Django integration hoặc bằng chứng P1/P2 trên Linux theo lockfile.
+
+Ruff 0.16.10: `check --no-fix` và `format --check` đều pass cho `src/documents/tests/test_parsers.py`.
+
 ## Checklist nghiệm thu Cycle 1
 
 - [ ] Reviewer xác nhận ít nhất ba invariant độc lập, đủ strategy, precondition, oracle và counterexample.
