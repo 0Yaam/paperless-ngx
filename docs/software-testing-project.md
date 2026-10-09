@@ -16,6 +16,8 @@ Nhóm kiểm thử một baseline cố định của Paperless-ngx như QA độ
 
 Mỗi suite phải có ít nhất 3 property độc lập, strategy có giới hạn, shrinking, seed tái lập và counterexample tối thiểu.
 
+Thiết kế Cycle 1 của PBT-04: [MIME-extension](pbt-04-mime-extension-design.md), gồm invariant, strategy, oracle, giới hạn và lộ trình Cycle 2 cho issue #13.
+
 ## Review chéo
 
 - Dân và Thịnh review lẫn nhau.
