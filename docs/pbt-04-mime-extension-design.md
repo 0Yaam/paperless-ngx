@@ -6,7 +6,7 @@
 - Owner: Huỳnh (`@1convitt`); reviewer: Vương (`@vuong123s`).
 - Baseline upstream: `da3de299f`; HEAD khảo sát trên `dev`: `b6f9328534eca17630e93a99406288058bc1d3a3`.
 - Target: `is_mime_type_supported`, `get_default_file_extension`, `is_file_ext_supported`, `get_supported_file_extensions` trong `src/documents/parsers.py`.
-- Cycle 1 chỉ thiết kế; chưa có kết quả chạy PBT-04 hoặc xác nhận defect. Không thay public API, dependency hay production code.
+- Cycle 1 chỉ thiết kế; chưa có kết quả chạy PBT-04 hoặc xác nhận defect. Không sửa public API, dependency hay production code.
 
 Registry chỉ là nguồn mapping và dependency cần cô lập. Scoring, tie-break, external parser thắng và `allow_remote` thuộc PBT-05; OCR, đọc tài liệu và gọi dịch vụ từ xa ngoài phạm vi.
 
@@ -43,7 +43,7 @@ Kiểm tra membership phân biệt P2 với một assertion case-invariance đơ
 ### P3 — Tập extension nhất quán với mapping và alias
 
 - **Strategy:** sinh 0–5 parser giả, mỗi parser có 0–8 mapping. MIME có dạng `application/x-pbt-<token>` với token ASCII lowercase dài 1–12; key duy nhất trong từng mapping, cho phép trùng giữa parser. Default extension có dấu chấm và token chữ/số lowercase dài 1–15. Bảng alias độc lập theo MIME, mỗi MIME có 0–4 alias cùng giới hạn extension; cho phép trùng alias và default.
-- **Precondition:** registry và bảng alias cố định trong một example. Thay `documents.parsers.get_parser_registry` bằng nguồn parser giả chỉ cung cấp `all_parsers`, và thay `documents.parsers.mimetypes.guess_all_extensions` bằng lookup bảng alias. Không dùng registry scoring thật.
+- **Precondition:** registry và bảng alias cố định trong một example. Mock `documents.parsers.get_parser_registry` bằng nguồn parser giả chỉ cung cấp `all_parsers`, và mock `documents.parsers.mimetypes.guess_all_extensions` bằng lookup bảng alias. Không dùng registry scoring thật.
 - **Oracle:** expected set tính từ dữ liệu strategy gốc: hợp mọi default extension và alias tương ứng từng MIME trong registry. Không gọi `get_supported_file_extensions` hoặc helper khác để tạo expected set.
 - **Pass/fail:** actual set bằng expected set, không thiếu hoặc thêm phần tử; registry rỗng phải cho tập rỗng. Mapping của parser vẫn đóng góp mà không cần gọi `score`.
 - **Counterexample minh họa:** mapping `image/jpeg → .jpg`, bảng alias gồm `.jpeg`, nhưng kết quả thiếu `.jpg` hoặc `.jpeg`. Strategy dùng MIME giả; ví dụ JPEG này minh họa cùng dạng lỗi trên MIME quen thuộc.
@@ -57,10 +57,10 @@ Các counterexample trong tài liệu là giả định dùng để giải thíc
 - Mỗi property dùng `max_examples=100`, `deadline=None`, giữ shrinking và health check mặc định. Không dùng suppression để che trạng thái fixture bị rò rỉ.
 - P1 dùng mapping built-in hữu hạn tại baseline; lưu số parser/MIME trong evidence. P2 giới hạn chuỗi 32 ký tự; P3 tối đa 40 mapping và 4 alias mỗi MIME.
 - Cô lập discovery plugin bên ngoài, reset registry trước/sau test, khôi phục settings và chặn cấu hình remote OCR. Với P1/P2, không cho môi trường máy chạy tự bổ sung plugin.
-- P3 thay dependency trong context riêng của từng example, khôi phục khi context thoát kể cả assertion fail; không tích lũy parser hay alias giữa các example. Không dùng function-scoped fixture để giữ mutable example state.
+- P3 mock dependency trong context riêng của từng example, khôi phục khi context thoát kể cả assertion fail; không tích lũy parser hay alias giữa các example. Không dùng function-scoped fixture để giữ mutable example state.
 - Không hardcode tập alias của host. P1/P2 lấy snapshot cùng môi trường; P3 dùng bảng alias giả xác định để kiểm tra logic.
 - Môi trường nghiệm thu: Ubuntu/Python 3.12 theo Coursework CI, dependency theo `uv.lock`. Local Windows dùng WSL2/Linux vì `uv` của repo chỉ khai báo Linux/macOS.
-- Chạy tái lập với `--hypothesis-seed=13`, ghi seed vào log. Khi fail, lưu output `Falsifying example` đã shrink và reproduction blob nếu Hypothesis cung cấp; seed không thay thế việc ghi phiên bản Python/Hypothesis và SHA.
+- Chạy tái lập với `--hypothesis-seed=13`, ghi seed vào log. Khi fail, lưu output `Falsifying example` đã shrink và reproduction blob nếu Hypothesis cung cấp; seed cần đi kèm việc ghi phiên bản Python/Hypothesis và SHA.
 
 ## Lộ trình Cycle 2
 
@@ -84,11 +84,11 @@ Không coi các lệnh này là bằng chứng đã chạy hoặc suite đã t�
 
 Đã bổ sung `TestMimeExtensionProperties` vào file test parser và job PBT-04 vào Coursework CI. P1 kiểm tra Tika bật/tắt và duyệt toàn bộ mapping; P2 kiểm tra membership và biến thể case; P3 dùng registry/bảng alias sinh độc lập, gồm example registry rỗng và default không có alias. Các regression cases kiểm tra fallback không đồng nghĩa MIME được hỗ trợ.
 
-P1/P2 dùng một registry built-in riêng, thay accessor của helper trong context và chặn `RemoteDocumentParser.score` để không đọc cấu hình DB/remote. Không sửa singleton toàn cục nên không cần reset singleton; dependency và settings tự khôi phục khi thoát context. Đây là cách cô lập thay cho phương án reset registry ở phần thiết kế.
+P1/P2 dùng một registry built-in riêng, mock accessor của helper trong context và chặn `RemoteDocumentParser.score` để không đọc cấu hình DB/remote. Không sửa singleton toàn cục nên không cần reset singleton; dependency và settings tự khôi phục khi thoát context. Đây là cách cô lập tương đương phương án reset registry ở phần thiết kế.
 
 Job CI chạy property rồi toàn bộ file parser, seed 13, một worker; lưu môi trường, log và JUnit dưới artifact `pbt-04-evidence`. Chưa có bằng chứng chạy pytest đầy đủ tại thời điểm triển khai local: máy Windows thiếu dependency testing, không có distro Linux phát triển và Docker engine chưa chạy. Checklist duyệt thiết kế vẫn chờ reviewer xác nhận.
 
-Kiểm chứng local ngày 2026-10-09: cú pháp Python và YAML hợp lệ, `git diff --check` không có lỗi whitespace. P3 chạy cô lập trên phần thân AST thực tế của helper/test, với Hypothesis 6.168.5 và Python 3.12: 100 generated examples và 2 explicit examples, seed 13, đều pass. Kiểm tra này không thay thế pytest/Django integration hoặc bằng chứng P1/P2 trên Linux theo lockfile.
+Kiểm chứng local ngày 2026-10-09: cú pháp Python và YAML hợp lệ, `git diff --check` không có lỗi whitespace. P3 chạy cô lập trên phần thân AST thực tế của helper/test, với Hypothesis 6.168.5 và Python 3.12: 100 generated examples và 2 explicit examples, seed 13, đều pass. Kiểm tra này chưa xác nhận pytest/Django integration hoặc P1/P2 trên Linux theo lockfile.
 
 Ruff 0.16.10: `check --no-fix` và `format --check` đều pass cho `src/documents/tests/test_parsers.py`.
 
