@@ -76,4 +76,14 @@ jobs:
           enable-cache: true
           python-version: "3.12"
       - run: uv sync --python 3.12 --group testing --frozen
-      - run: uv run --python 3.12 --dev --frozen pytest src/paperless/tests/test_parser_selection_pbt.py -k TestPbtParserSelection
+      - name: Run PBT-05 and save evidence log
+        shell: bash
+        run: |
+          mkdir -p .artifacts
+          uv run --python 3.12 --dev --frozen pytest src/paperless/tests/test_parser_selection_pbt.py -k TestPbtParserSelection -v --hypothesis-seed=20261008 --hypothesis-show-statistics 2>&1 | tee .artifacts/pbt-05-run.log
+      - name: Upload PBT-05 test evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: pbt-05-evidence
+          path: .artifacts/pbt-05-run.log

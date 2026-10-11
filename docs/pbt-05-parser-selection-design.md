@@ -95,23 +95,44 @@ When resolving a parser for a document, `get_parser_for_file` arbitrates candida
 
 ### Invariant 4: Robust Fallback to None (`PBT05-INV4-NONE-FALLBACK`)
 
-- **Objective**: Ensure graceful handling when no registered parser matches or all eligible parsers decline.
-- **Preconditions**:
-  - Eligible set $\mathcal{E} = \emptyset$ (no MIME match, all `score() == None`, or all remote when `allow_remote=False`).
-- **Hypothesis Strategy**:
-  - Generate parsers with disjoint MIME types or `score() == None`.
-- **Reference Oracle**:
-  $$\text{Oracle: } P^* \text{ is None}$$
-- **Sample Counterexample**:
-  - _Hypothetical bug_: Returning `self._builtins[0]` as default fallback or raising unhandled exception.
-  - _Minimal input_: Single registered parser `DecliningParser(score=None)`.
-  - _Erroneous outcome_: Returns `DecliningParser` instead of `None`.
+- **Objective**: Ensure graceful handling returning `None` by isolating each distinct failure cause:
+
+#### Invariant 4A: Empty Registry (`PBT05-INV4A-EMPTY-REGISTRY`)
+
+- **Preconditions**: `len(registry.all_parsers()) == 0`.
+- **Strategy**: Invoke `get_parser_for_file` on arbitrary MIME types and filenames with an empty registry.
+- **Reference Oracle**: `get_parser_for_file(...) is None`.
+- **Counterexample**: Implementation raising `IndexError` on empty registry candidates.
+
+#### Invariant 4B: Unsupported MIME with Valid Scores (`PBT05-INV4B-UNSUPPORTED-MIME`)
+
+- **Preconditions**: Parsers exist with valid integer scores and local execution, but none advertise `target_mime`.
+- **Strategy**: Generate 1..5 local parsers with scores in `[1, 100]` supporting only unrelated MIME types.
+- **Reference Oracle**: `get_parser_for_file(target_mime, ...) is None`.
+- **Counterexample**: Implementation matching by filename extension or defaulting when MIME fails.
+
+#### Invariant 4C: Matching MIME with Declining Scores (`PBT05-INV4C-DECLINING-SCORE`)
+
+- **Preconditions**: Candidate parsers match `target_mime`, but all return `score() == None`.
+- **Strategy**: Generate 1..5 parsers matching `target_mime` whose `score()` returns `None`.
+- **Reference Oracle**: `get_parser_for_file(...) is None`.
+- **Counterexample**: Implementation treating `score is None` as score 0 and returning the first parser.
+
+#### Invariant 4D: Blocked Remote Parsers (`PBT05-INV4D-BLOCKED-REMOTE-ONLY`)
+
+- **Preconditions**: Candidate parsers match `target_mime` and return positive scores, but all declare `uses_remote_service = True` and `allow_remote = False`.
+- **Strategy**: Generate 1..5 remote parsers with scores in `[10, 100]` while `allow_remote=False`.
+- **Reference Oracle**: `get_parser_for_file(..., allow_remote=False) is None`.
+- **Counterexample**: Implementation falling back to remote parsers when no local parser is available.
 
 ---
 
-## 3. Bounded Parameters and CI Stability
+## 3. Bounded Parameters and CI Reproducibility
 
 - **Execution bounds**: `@settings(max_examples=200, deadline=None)` per property.
+- **Reproducibility seed**: Fixed CLI seed `--hypothesis-seed=20261008`.
+- **Statistics reporting**: `--hypothesis-show-statistics` enabled to capture coverage and shrinking metrics.
+- **Artifact retention**: Execution logs captured to `.artifacts/pbt-05-evidence.log` and uploaded as workflow artifacts.
 - **Collection bounds**: 0 to 8 mock parser classes per execution.
 - **Score domain**: Bounded integers $[-100, 100]$.
 - **Isolation**: Fresh `ParserRegistry` instance per test iteration, leaving global singleton untouched.

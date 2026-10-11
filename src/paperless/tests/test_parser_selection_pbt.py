@@ -272,28 +272,137 @@ class TestPbtParserSelection:
             assert result.score(target_mime, "confidential.bin") == max_local_score
 
     @given(
+        target_mime=st.sampled_from(MIME_POOL),
+        filename=st.text(min_size=1, max_size=20),
+        allow_remote=st.booleans(),
+    )
+    @settings(max_examples=200, deadline=None)
+    def test_none_returned_when_registry_is_empty(
+        self,
+        target_mime: str,
+        filename: str,
+        allow_remote: bool,  # noqa: FBT001
+    ) -> None:
+        """PBT05-INV4A-EMPTY-REGISTRY:
+
+        An empty parser registry must always return None for any input file.
+        """
+        registry = ParserRegistry()
+        result = registry.get_parser_for_file(
+            mime_type=target_mime,
+            filename=filename,
+            allow_remote=allow_remote,
+        )
+        assert result is None
+
+    @given(
         specs=st.lists(
             st.builds(
                 MockParserSpec,
-                name=st.text(alphabet="xyz", min_size=1, max_size=4),
-                supported_mimes=st.just(("other/type",)),
+                name=st.text(alphabet="abc", min_size=1, max_size=4),
+                supported_mimes=st.just(("other/unsupported-mime",)),
+                score_val=st.integers(min_value=1, max_value=100),
+                is_external=st.booleans(),
+                uses_remote_service=st.just(False),  # noqa: FBT003
+            ),
+            min_size=1,
+            max_size=5,
+        ),
+        target_mime=st.sampled_from(MIME_POOL),
+        allow_remote=st.booleans(),
+    )
+    @settings(max_examples=200, deadline=None)
+    def test_none_returned_when_mime_unsupported_despite_valid_scores(
+        self,
+        specs: list[MockParserSpec],
+        target_mime: str,
+        allow_remote: bool,  # noqa: FBT001
+    ) -> None:
+        """PBT05-INV4B-UNSUPPORTED-MIME:
+
+        When candidate parsers have valid positive scores and local execution,
+        but none support target_mime, get_parser_for_file must return None.
+        """
+        registry = ParserRegistry()
+        for spec in specs:
+            cls = create_mock_parser_class(spec)
+            if spec.is_external:
+                registry._external.append(cls)
+            else:
+                registry.register_builtin(cls)
+
+        result = registry.get_parser_for_file(
+            mime_type=target_mime,
+            filename="document.bin",
+            allow_remote=allow_remote,
+        )
+        assert result is None
+
+    @given(
+        specs=st.lists(
+            st.builds(
+                MockParserSpec,
+                name=st.text(alphabet="def", min_size=1, max_size=4),
+                supported_mimes=st.just(("application/pdf",)),
                 score_val=st.none(),
+                is_external=st.booleans(),
+                uses_remote_service=st.just(False),  # noqa: FBT003
+            ),
+            min_size=1,
+            max_size=5,
+        ),
+        allow_remote=st.booleans(),
+    )
+    @settings(max_examples=200, deadline=None)
+    def test_none_returned_when_matching_parsers_decline_with_none_score(
+        self,
+        specs: list[MockParserSpec],
+        allow_remote: bool,  # noqa: FBT001
+    ) -> None:
+        """PBT05-INV4C-DECLINING-SCORE:
+
+        When all matching parsers support target_mime but return score None,
+        get_parser_for_file must return None.
+        """
+        registry = ParserRegistry()
+        for spec in specs:
+            cls = create_mock_parser_class(spec)
+            if spec.is_external:
+                registry._external.append(cls)
+            else:
+                registry.register_builtin(cls)
+
+        result = registry.get_parser_for_file(
+            mime_type="application/pdf",
+            filename="document.pdf",
+            allow_remote=allow_remote,
+        )
+        assert result is None
+
+    @given(
+        specs=st.lists(
+            st.builds(
+                MockParserSpec,
+                name=st.text(alphabet="ghi", min_size=1, max_size=4),
+                supported_mimes=st.just(("application/pdf",)),
+                score_val=st.integers(min_value=10, max_value=100),
                 is_external=st.booleans(),
                 uses_remote_service=st.just(True),  # noqa: FBT003
             ),
-            min_size=0,
+            min_size=1,
             max_size=5,
         ),
     )
     @settings(max_examples=200, deadline=None)
-    def test_ineligible_or_declining_parsers_return_none(
+    def test_none_returned_when_only_remote_parsers_available_and_not_allowed(
         self,
         specs: list[MockParserSpec],
     ) -> None:
-        """PBT05-INV4-NONE-FALLBACK:
+        """PBT05-INV4D-BLOCKED-REMOTE-ONLY:
 
-        When no registered parser matches the MIME type or all parsers
-        decline (score is None), get_parser_for_file must return None.
+        When all candidate parsers match MIME and return valid scores but
+        declare uses_remote_service=True and allow_remote=False,
+        get_parser_for_file must return None.
         """
         registry = ParserRegistry()
         for spec in specs:
