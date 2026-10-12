@@ -1,10 +1,10 @@
-# PBT-05: Parser Selection Design (Cycle 1)
+# PBT-05: Thiết kế kiểm thử Lựa chọn Parser (Parser Selection Design)
 
-## Overview
+## Thông tin chung (Overview)
 
-- **Target under test**: `paperless.parsers.registry.ParserRegistry.get_parser_for_file`
-- **Source file**: [`src/paperless/parsers/registry.py`](../src/paperless/parsers/registry.py)
-- **Suite**: PBT-05 Parser selection
+- **Target under test (Đối tượng kiểm thử)**: `paperless.parsers.registry.ParserRegistry.get_parser_for_file`
+- **Source file (Tệp mã nguồn)**: [`src/paperless/parsers/registry.py`](../src/paperless/parsers/registry.py)
+- **Suite**: PBT-05 Parser selection (Lựa chọn bộ phân tích tài liệu)
 - **Owner**: Phùng Nguyễn Hoài Bo ([@HubertPhung](https://github.com/HubertPhung))
 - **Reviewer**: Vũ Thế Huỳnh ([@1convitt](https://github.com/1convitt))
 - **Issue**: [#14 — [Cycle 1][Bo] Design PBT-05 Parser selection](https://github.com/0Yaam/paperless-ngx/issues/14)
@@ -12,191 +12,172 @@
 
 ---
 
-## 1. Context and Problem Statement
+## 1. Bối cảnh hệ thống và Mục tiêu kiểm thử
 
-### 1.1 The Document Parsing Challenge in Paperless-ngx
+### 1.1 Bài toán trong Paperless-ngx
 
-Paperless-ngx ingests heterogeneous file formats (PDFs, TIFF images, plain text, emails, Office documents). To parse these documents into searchable text and metadata, the system maintains a collection of specialized document parser classes.
+Paperless-ngx tiếp nhận nhiều định dạng tài liệu khác nhau (PDF, TIFF, ảnh scan, văn bản thô, email...). Để trích xuất nội dung và metadata, hệ thống sử dụng nhiều lớp parser chuyên biệt.
 
-In `src/paperless/parsers/registry.py`, the `ParserRegistry` class manages two separate lists of parsers:
+Trong `ParserRegistry`, các parser được chia thành hai danh sách:
 
-1. `_builtins`: Standard parsers bundled with the core system (e.g., Tesseract OCR parser, text parser, email parser, remote Gotenberg/Tika parsers).
-2. `_external`: Third-party parser extensions discovered dynamically via Python entry points (`paperless_ngx.parsers`).
+- `_builtins`: Các parser mặc định tích hợp sẵn (Tesseract OCR, Text, Mail, Rasterised, Remote Gotenberg/Tika).
+- `_external`: Các parser mở rộng do bên thứ ba phát triển qua entry points (`paperless_ngx.parsers`).
 
-### 1.2 Arbitration Algorithm (`get_parser_for_file`)
+Hàm `get_parser_for_file(mime_type, filename, path=None, allow_remote=True)` đảm nhận nhiệm vụ trọng tài, lựa chọn parser thích hợp nhất theo thứ tự ưu tiên:
 
-When a document is consumed, the engine invokes `get_parser_for_file(mime_type, filename, path=None, allow_remote=True)`. The method must resolve exactly one optimal parser class from all registered candidates by executing the following arbitration rules in strict order:
-
-1. **MIME Compatibility**: Only parsers declaring `mime_type in parser_class.supported_mime_types()` are eligible.
-2. **Air-gap / Remote Protection**: If `allow_remote=False`, any parser declaring `getattr(parser_class, "uses_remote_service", False) == True` must be strictly excluded.
-3. **Dynamic Suitability Scoring**: Each surviving parser computes `score = parser_instance.score(mime_type, filename, path)`. If `score is None`, the parser declines the file and is discarded.
-4. **Maximum Score Principle**: Parsers with strictly higher numerical scores win over parsers with lower scores.
-5. **Tie-breaking Precedence**: If an external plugin parser and a built-in parser achieve the identical highest score, the **external parser takes precedence**, allowing users to override default behavior with custom plugins.
-6. **Graceful Degradation**: If no eligible parser exists or all parsers decline, the method safely returns `None` without raising uncaught exceptions.
+1. **Khớp định dạng MIME**: Chỉ parser hỗ trợ `mime_type` mới được xét.
+2. **Bảo vệ môi trường cô lập**: Khi `allow_remote=False`, cấm hoàn toàn parser có `uses_remote_service=True`.
+3. **Chấm điểm phù hợp**: Gọi `score()`. Nếu trả về `None`, parser từ chối xử lý.
+4. **Điểm cao nhất chiến thắng**: Parser có điểm số nguyên lớn nhất sẽ được chọn.
+5. **Ưu tiên External Parser khi hòa điểm**: Nếu parser mở rộng và parser mặc định cùng điểm cao nhất, parser mở rộng được chọn để cho phép người dùng ghi đè cấu hình mặc định.
+6. **Suy thoái êm dịu (Graceful Fallback)**: Trả về `None` an toàn nếu không tìm thấy parser phù hợp.
 
 ---
 
-## 2. Mathematical Formalization of Parser Arbitration
+## 2. Chi tiết 7 Test Case (Property-Based Tests)
 
-Let $\mathcal{P} = \mathcal{P}_{\text{ext}} \cup \mathcal{P}_{\text{built}}$ be the finite set of registered parser classes, where:
+### Test Case 1: Điểm số hợp lệ cao nhất luôn chiến thắng (`PBT05-INV1-MAX-SCORE`)
 
-- $\mathcal{P}_{\text{ext}} = \text{registry.\_external}$
-- $\mathcal{P}_{\text{built}} = \text{registry.\_builtins}$
-- $\mathcal{P}_{\text{ext}} \cap \mathcal{P}_{\text{built}} = \emptyset$
-
-Given input query parameters $q = (\mu, f, p, \alpha)$ where:
-
-- $\mu \in \text{MIME}$: MIME type string
-- $f \in \text{String}$: filename
-- $p \in \text{Path} \cup \{\text{None}\}$: file path
-- $\alpha \in \{\text{True}, \text{False}\}$: `allow_remote` flag
-
-### Step 1: Filtering Eligible Candidates
-
-A parser $P \in \mathcal{P}$ is eligible under query $q$, denoted $P \in \mathcal{E}(q)$, if and only if:
-$$\mu \in P.\text{supported\_mime\_types}()$$
-$$\neg \alpha \implies \neg \operatorname{getattr}(P, \text{"uses\_remote\_service"}, \text{False})$$
-$$P.\text{score}(\mu, f, p) \ne \text{None}$$
-
-### Step 2: Scoring Function
-
-Define score function $S(P) = P.\text{score}(\mu, f, p) \in \mathbb{Z}$ for all $P \in \mathcal{E}(q)$.
-
-### Step 3: Candidate Ranking and Tie-breaking
-
-Let $S^* = \max_{P \in \mathcal{E}(q)} S(P)$ be the optimal score.
-The set of winning candidates is:
-$$\mathcal{W}(q) = \{ P \in \mathcal{E}(q) \mid S(P) = S^* \}$$
-
-The arbitration decision $P^*(q)$ satisfies:
-
-$$ P^*(q) = \begin{cases}
-\text{None} & \text{if } \mathcal{E}(q) = \emptyset \\
-\text{first } P \in \mathcal{W}(q) \cap \mathcal{P}_{\text{ext}} & \text{if } \mathcal{W}(q) \cap \mathcal{P}_{\text{ext}} \ne \emptyset \\
-\text{first } P \in \mathcal{W}(q) \cap \mathcal{P}_{\text{built}} & \text{otherwise}
-\end{cases}$$
+- **Tên hàm test**: `test_highest_scoring_eligible_parser_wins`
+- **Mục tiêu**: Đảm bảo giải thuật lựa chọn luôn chọn đúng parser đạt điểm số nguyên lớn nhất trong tập các parser hợp lệ.
+- **Tiền điều kiện**: Tập ứng viên hợp lệ không rỗng. Ứng viên hợp lệ phải khớp MIME, không vi phạm cấm remote, và có điểm khác `None`.
+- **Dữ liệu sinh tự động (Hypothesis Strategy)**:
+  - Sinh từ 1 đến 8 parser ngẫu nhiên với điểm trong đoạn $[-100, 100]$ hoặc `None`.
+  - Phân bổ ngẫu nhiên vào `_external` hoặc `_builtins`.
+  - Cờ `uses_remote_service` ngẫu nhiên (True/False).
+  - Cờ `allow_remote` ngẫu nhiên (True/False).
+- **Oracle (Tiêu chuẩn kiểm chứng)**:
+  - Parser được chọn phải thuộc tập hợp lệ và có điểm số bằng đúng điểm lớn nhất trong tập hợp lệ:
+    $$\text{score}(P^*) = \max_{P \in \mathcal{E}} \text{score}(P)$$
+- **Phản ví dụ giả định (Counterexample)**:
+  - _Lỗi code_: So sánh nhầm dấu `<` (chọn parser điểm thấp nhất) hoặc không cập nhật biến lưu điểm cao nhất.
+  - _Đầu vào mẫu_: `ParserA(score=10)` và `ParserB(score=90)`.
+  - _Kết quả sai_: Hàm trả về `ParserA`.
 
 ---
 
-## 3. Independent Invariants Specification
+### Test Case 2: Parser mở rộng thắng khi hòa điểm với parser mặc định (`PBT05-INV2-TIE-BREAK-EXTERNAL`)
 
-### Invariant 1: Highest-Scoring Eligible Parser Wins (`PBT05-INV1-MAX-SCORE`)
-
-- **Objective**: Verify that the selected parser always achieves the maximum integer score among all eligible candidates.
-- **Preconditions**:
-  - $\mathcal{E}(q) \ne \emptyset$.
-- **Hypothesis Strategy**:
-  - Generate 1 to 8 mock parser specifications:
-    - Scores in $[-100, 100]$ or `None`.
-    - MIME subsets sampled from `{"text/plain", "application/pdf", "image/png", "application/xml"}`.
-    - Boolean `uses_remote_service`.
-    - Flag `is_external` placing the parser into either `_external` or `_builtins`.
-  - Input parameters: `target_mime`, `filename: st.text(min_size=1, max_size=20)`, `allow_remote: st.booleans()`.
-- **Reference Oracle**:
-  $$P^* \in \mathcal{E}(q) \quad \land \quad S(P^*) = \max_{P \in \mathcal{E}(q)} S(P)$$
-- **Sample Counterexample**:
-  - *Hypothetical bug*: Comparing scores using `<` instead of `>` (returning the minimum score parser), or failing to update the current maximum.
-  - *Input*: `ParserA(score=10)` and `ParserB(score=95)` for `application/pdf`.
-  - *Erroneous outcome*: Returns `ParserA` (score 10).
+- **Tên hàm test**: `test_external_parser_wins_tie_with_builtin`
+- **Mục tiêu**: Đảm bảo cơ chế mở rộng hệ thống — khi external parser và built-in parser có cùng điểm số cao nhất, external parser luôn được ưu tiên chọn.
+- **Tiền điều kiện**: Cả external parser và built-in parser cùng đạt điểm số cao nhất.
+- **Dữ liệu sinh tự động (Hypothesis Strategy)**:
+  - Sinh điểm hòa ngẫu nhiên $S_{tie} \in [-50, 50]$.
+  - Sinh từ 1 đến 4 external parser và từ 1 đến 4 built-in parser cùng có điểm $S_{tie}$ và cùng hỗ trợ `target_mime`.
+- **Oracle (Tiêu chuẩn kiểm chứng)**:
+  - Parser chiến thắng bắt buộc phải thuộc `registry._external` và không thuộc `registry._builtins`.
+  - Parser chiến thắng là phần tử external đầu tiên trong thứ tự duyệt.
+- **Phản ví dụ giả định (Counterexample)**:
+  - _Lỗi code_: Duyệt danh sách built-in trước external, hoặc dùng toán tử `>=` khiến phần tử sau ghi đè phần tử trước.
+  - _Đầu vào mẫu_: `ExtParser(score=50)` và `BuiltinParser(score=50)`.
+  - _Kết quả sai_: Hàm trả về `BuiltinParser`.
 
 ---
 
-### Invariant 2: External Parser Wins Score Tie with Built-in (`PBT05-INV2-TIE-BREAK-EXTERNAL`)
+### Test Case 3: Loại bỏ hoàn toàn Remote Parser khi cấm kết nối ngoài (`PBT05-INV3-REMOTE-EXCLUSION`)
 
-- **Objective**: Validate extension precedence: when an external parser and a built-in parser tie for the top score, the external parser wins.
-- **Preconditions**:
-  - Both an external parser and a built-in parser belong to $\mathcal{W}(q)$.
-- **Hypothesis Strategy**:
-  - Generate a shared tie score $S_{tie} \in [-50, 50]$.
-  - Generate 1..4 external parsers and 1..4 built-in parsers supporting `target_mime`.
-  - Ensure at least one external and one built-in parser have score $S_{tie}$, with all others scoring $\le S_{tie}$.
-- **Reference Oracle**:
-  $$P^* \in \mathcal{P}_{\text{ext}} \quad \land \quad P^* \notin \mathcal{P}_{\text{built}} \quad \land \quad S(P^*) = S_{tie}$$
-- **Sample Counterexample**:
-  - *Hypothetical bug*: Order of iteration inverted `(*self._builtins, *self._external)` or using `>=` (last-seen wins).
-  - *Input*: `ExternalPDFParser(score=50)` and `BuiltinPDFParser(score=50)`.
-  - *Erroneous outcome*: Returns `BuiltinPDFParser`.
-
----
-
-### Invariant 3: Remote Parsers Excluded When `allow_remote=False` (`PBT05-INV3-REMOTE-EXCLUSION`)
-
-- **Objective**: Guarantee air-gapped data security: when `allow_remote=False`, parsers with `uses_remote_service = True` are strictly discarded regardless of score superiority.
-- **Preconditions**:
-  - `allow_remote = False`.
-  - The registry contains candidate parsers declaring `uses_remote_service = True`.
-- **Hypothesis Strategy**:
-  - Generate 1..3 remote parsers declaring `uses_remote_service = True` with high scores (e.g. 100).
-  - Generate 0..3 local parsers with lower scores ($1..40$) or declining (`None`).
-  - Query with `allow_remote=False`.
-- **Reference Oracle**:
-  $$P^* \text{ is None} \quad \lor \quad \operatorname{getattr}(P^*, \text{"uses\_remote\_service"}, \text{False}) == \text{False}$$
-- **Sample Counterexample**:
-  - *Hypothetical bug*: Omitting the `allow_remote` check in the parser loop.
-  - *Input*: `CloudOCRParser(score=100, remote=True)` and `LocalTesseract(score=40, remote=False)` with `allow_remote=False`.
-  - *Erroneous outcome*: Returns `CloudOCRParser`.
+- **Tên hàm test**: `test_remote_parsers_excluded_when_not_allowed`
+- **Mục tiêu**: Bảo mật dữ liệu trong môi trường nội bộ — khi `allow_remote=False`, mọi parser khai báo `uses_remote_service=True` phải bị loại bỏ tuyệt đối, không được chọn dù điểm số của nó cao đến đâu.
+- **Tiền điều kiện**: `allow_remote=False` và registry có chứa parser khai báo `uses_remote_service=True`.
+- **Dữ liệu sinh tự động (Hypothesis Strategy)**:
+  - Sinh từ 1 đến 3 remote parser có điểm số rất cao ($[50, 100]$).
+  - Sinh từ 0 đến 3 local parser có điểm số thấp hơn ($[-20, 40]$) hoặc trả về `None`.
+  - Gọi hàm với `allow_remote=False`.
+- **Oracle (Tiêu chuẩn kiểm chứng)**:
+  - Kết quả trả về không bao giờ có cờ `uses_remote_service=True`.
+  - Nếu không có local parser nào có điểm hợp lệ, kết quả phải là `None`.
+  - Nếu có local parser hợp lệ, local parser có điểm cao nhất sẽ được chọn.
+- **Phản ví dụ giả định (Counterexample)**:
+  - _Lỗi code_: Bỏ sót điều kiện kiểm tra `allow_remote`, chọn nhầm remote parser do điểm số cao hơn.
+  - _Đầu vào mẫu_: `CloudOCR(score=100, remote=True)` và `LocalParser(score=20, remote=False)` với `allow_remote=False`.
+  - _Kết quả sai_: Hàm trả về `CloudOCR`.
 
 ---
 
-### Invariant 4: Robust None Fallbacks (`PBT05-INV4-NONE-FALLBACK`)
+### Test Case 4: Trả về None khi Registry rỗng (`PBT05-INV4A-EMPTY-REGISTRY`)
 
-To cleanly verify that `None` is returned for specific, distinct failure causes without confounding multiple conditions, Invariant 4 is partitioned into four independent sub-properties:
-
-#### Invariant 4A: Empty Registry (`PBT05-INV4A-EMPTY-REGISTRY`)
-- **Preconditions**: `len(registry.all_parsers()) == 0`.
-- **Strategy**: Invoke `get_parser_for_file` on arbitrary MIME types and filenames with an empty registry.
-- **Reference Oracle**: `get_parser_for_file(...) is None`.
-- **Counterexample**: Implementation raising `IndexError` or `StopIteration` when searching an empty candidate list.
-
-#### Invariant 4B: Unsupported MIME with Valid Scores (`PBT05-INV4B-UNSUPPORTED-MIME`)
-- **Preconditions**: Parsers exist with positive scores ($[1, 100]$) and local execution, but none advertise `target_mime`.
-- **Strategy**: Generate 1..5 local parsers supporting only unrelated MIME types (e.g., `other/unsupported-mime`).
-- **Reference Oracle**: `get_parser_for_file(target_mime, ...) is None`.
-- **Counterexample**: Implementation falling back to filename extension matching or defaulting to the first parser.
-
-#### Invariant 4C: Matching MIME with Declining Scores (`PBT05-INV4C-DECLINING-SCORE`)
-- **Preconditions**: Candidate parsers match `target_mime`, but all return `score() == None`.
-- **Strategy**: Generate 1..5 parsers matching `target_mime` whose `score()` returns `None`.
-- **Reference Oracle**: `get_parser_for_file(...) is None`.
-- **Counterexample**: Implementation coercing `score is None` to score `0` and returning the candidate.
-
-#### Invariant 4D: Blocked Remote Parsers Only (`PBT05-INV4D-BLOCKED-REMOTE-ONLY`)
-- **Preconditions**: Candidate parsers match `target_mime` and return positive scores, but all declare `uses_remote_service = True` while `allow_remote = False`.
-- **Strategy**: Generate 1..5 remote parsers with scores in $[10, 100]$ while invoking `allow_remote=False`.
-- **Reference Oracle**: `get_parser_for_file(..., allow_remote=False) is None`.
-- **Counterexample**: Implementation falling back to a remote parser when no local parser is available.
+- **Tên hàm test**: `test_none_returned_when_registry_is_empty`
+- **Mục tiêu**: Kiểm tra tính bền bỉ khi hệ thống chưa nạp parser nào hoặc registry bị xóa rỗng.
+- **Tiền điều kiện**: Registry không chứa bất kỳ parser nào.
+- **Dữ liệu sinh tự động (Hypothesis Strategy)**:
+  - Registry rỗng (0 parser).
+  - MIME type ngẫu nhiên, tên file ngẫu nhiên, cờ `allow_remote` ngẫu nhiên.
+- **Oracle (Tiêu chuẩn kiểm chứng)**:
+  - `result is None`.
+- **Phản ví dụ giả định (Counterexample)**:
+  - _Lỗi code_: Hàm bị văng ngoại lệ `IndexError` hoặc `StopIteration` khi truy cập danh sách rỗng.
 
 ---
 
-## 4. Bounded Parameters and CI Reproducibility
+### Test Case 5: Trả về None khi không hỗ trợ định dạng MIME (`PBT05-INV4B-UNSUPPORTED-MIME`)
 
-- **Execution bounds**: `@settings(max_examples=200, deadline=None)` per property.
-- **Reproducibility seed**: Fixed CLI seed `--hypothesis-seed=20261008`.
-- **Statistics reporting**: `--hypothesis-show-statistics` enabled to capture coverage and shrinking metrics.
-- **Artifact retention**: Execution logs captured to `.artifacts/pbt-05-run.log` and uploaded as workflow artifact `pbt-05-evidence`.
-- **Collection bounds**: 0 to 8 mock parser classes per execution iteration.
-- **Score domain**: Bounded integers $[-100, 100]$.
-- **Isolation**: Fresh `ParserRegistry` instance per test iteration, leaving global singleton untouched.
-
----
-
-## 5. Traceability Matrix and Test Results
-
-| Invariant ID | Test Method | Covered Rule | CI Seed | Status |
-| :--- | :--- | :--- | :---: | :---: |
-| `PBT05-INV1` | `test_highest_scoring_eligible_parser_wins` | Maximum integer score wins | `20261008` | :white_check_mark: Pass (200 ex) |
-| `PBT05-INV2` | `test_external_parser_wins_tie_with_builtin` | External beats built-in on tie | `20261008` | :white_check_mark: Pass (200 ex) |
-| `PBT05-INV3` | `test_remote_parsers_excluded_when_not_allowed` | Air-gap remote parser exclusion | `20261008` | :white_check_mark: Pass (200 ex) |
-| `PBT05-INV4A` | `test_none_returned_when_registry_is_empty` | Empty registry fallback | `20261008` | :white_check_mark: Pass (200 ex) |
-| `PBT05-INV4B` | `test_none_returned_when_mime_unsupported_despite_valid_scores` | Unsupported MIME fallback | `20261008` | :white_check_mark: Pass (200 ex) |
-| `PBT05-INV4C` | `test_none_returned_when_matching_parsers_decline_with_none_score` | Declining parser fallback | `20261008` | :white_check_mark: Pass (200 ex) |
-| `PBT05-INV4D` | `test_none_returned_when_only_remote_parsers_available_and_not_allowed` | Remote-only blocked fallback | `20261008` | :white_check_mark: Pass (200 ex) |
+- **Tên hàm test**: `test_none_returned_when_mime_unsupported_despite_valid_scores`
+- **Mục tiêu**: Kiểm chứng việc từ chối tài liệu khi không có parser nào hỗ trợ định dạng MIME của file, dù các parser đều có điểm số hợp lệ và chạy cục bộ.
+- **Tiền điều kiện**: Tồn tại parser cục bộ có điểm số dương ($[1, 100]$), nhưng không parser nào khai báo hỗ trợ `target_mime`.
+- **Dữ liệu sinh tự động (Hypothesis Strategy)**:
+  - Sinh từ 1 đến 5 parser hỗ trợ MIME không liên quan (`other/unsupported-mime`).
+  - Truy vấn với `target_mime` ngẫu nhiên.
+- **Oracle (Tiêu chuẩn kiểm chứng)**:
+  - `result is None`.
+- **Phản ví dụ giả định (Counterexample)**:
+  - _Lỗi code_: Tự ý suy đoán theo phần mở rộng của tên tệp (`.bin`) hoặc mặc định chọn parser đầu tiên.
 
 ---
 
-## 6. Scope Demarcation (K01)
+### Test Case 6: Trả về None khi các parser đều từ chối tài liệu (`PBT05-INV4C-DECLINING-SCORE`)
 
-- **PBT-04 (@1convitt - Reviewer)**: Tests static MIME-to-extension dictionary mappings in `documents.parsers`.
-- **PBT-05 (@HubertPhung - Owner)**: Tests dynamic parser arbitration, scoring, and remote exclusion in `ParserRegistry.get_parser_for_file`.
-- **Boundary**: Disjoint domain models with zero overlapping code paths or assertions.
-$$
+- **Tên hàm test**: `test_none_returned_when_matching_parsers_decline_with_none_score`
+- **Mục tiêu**: Đảm bảo xử lý chính xác khi parser đúng MIME nhưng chủ động từ chối tài liệu bằng cách trả về điểm `None`.
+- **Tiền điều kiện**: Các parser đều khớp `target_mime`, nhưng tất cả đều trả về `score() == None`.
+- **Dữ liệu sinh tự động (Hypothesis Strategy)**:
+  - Sinh từ 1 đến 5 parser khớp định dạng `application/pdf`, nhưng điểm số đều là `None`.
+- **Oracle (Tiêu chuẩn kiểm chứng)**:
+  - `result is None`.
+- **Phản ví dụ giả định (Counterexample)**:
+  - _Lỗi code_: Coi `score is None` tương đương điểm 0 và chọn nhầm parser đầu tiên.
+
+---
+
+### Test Case 7: Trả về None khi chỉ có Remote Parser nhưng bị cấm (`PBT05-INV4D-BLOCKED-REMOTE-ONLY`)
+
+- **Tên hàm test**: `test_none_returned_when_only_remote_parsers_available_and_not_allowed`
+- **Mục tiêu**: Đảm bảo hệ thống không linh động chọn remote parser khi chạy offline nếu không có local parser nào khác.
+- **Tiền điều kiện**: Toàn bộ parser ứng viên đều là remote parser (`uses_remote_service=True`), có điểm số dương ($[10, 100]$), nhưng gọi với `allow_remote=False`.
+- **Dữ liệu sinh tự động (Hypothesis Strategy)**:
+  - Sinh từ 1 đến 5 remote parser khớp MIME, điểm từ 10 đến 100, gọi với `allow_remote=False`.
+- **Oracle (Tiêu chuẩn kiểm chứng)**:
+  - `result is None`.
+- **Phản ví dụ giả định (Counterexample)**:
+  - _Lỗi code_: Hệ thống tự ý nới lỏng và chọn remote parser vì không còn giải pháp nào khác.
+
+---
+
+## 3. Cấu hình thực hiện và Tính tái lập trong CI
+
+- **Số lượng mẫu thử**: `@settings(max_examples=200, deadline=None)` cho mỗi property.
+- **Seed cố định tái lập**: `--hypothesis-seed=20261008`.
+- **Thống kê chi tiết**: `--hypothesis-show-statistics`.
+- **Lưu trữ bằng chứng**: Log thực hiện được ghi vào `.artifacts/pbt-05-run.log` và tải lên CI dưới tên artifact `pbt-05-evidence`.
+- **Môi trường cách ly**: Mỗi lần lặp kiểm thử tạo một đối tượng `ParserRegistry` mới hoàn toàn độc lập, không làm ảnh hưởng đối tượng singleton toàn cục.
+
+---
+
+## 4. Bảng ma trận đối chiếu (Traceability Matrix)
+
+| Mã Invariant  | Tên hàm kiểm thử                                                        | Tính chất nghiệp vụ kiểm chứng                        |  Seed CI   |  Trạng thái   |
+| :------------ | :---------------------------------------------------------------------- | :---------------------------------------------------- | :--------: | :-----------: |
+| `PBT05-INV1`  | `test_highest_scoring_eligible_parser_wins`                             | Parser hợp lệ có điểm số cao nhất luôn thắng          | `20261008` | Đạt (200 mẫu) |
+| `PBT05-INV2`  | `test_external_parser_wins_tie_with_builtin`                            | Parser mở rộng thắng khi hòa điểm với parser mặc định | `20261008` | Đạt (200 mẫu) |
+| `PBT05-INV3`  | `test_remote_parsers_excluded_when_not_allowed`                         | Cấm triệt để parser từ xa khi chạy offline            | `20261008` | Đạt (200 mẫu) |
+| `PBT05-INV4A` | `test_none_returned_when_registry_is_empty`                             | Xử lý an toàn khi registry rỗng                       | `20261008` | Đạt (200 mẫu) |
+| `PBT05-INV4B` | `test_none_returned_when_mime_unsupported_despite_valid_scores`         | Xử lý an toàn khi không khớp định dạng MIME           | `20261008` | Đạt (200 mẫu) |
+| `PBT05-INV4C` | `test_none_returned_when_matching_parsers_decline_with_none_score`      | Xử lý an toàn khi parser từ chối file (điểm None)     | `20261008` | Đạt (200 mẫu) |
+| `PBT05-INV4D` | `test_none_returned_when_only_remote_parsers_available_and_not_allowed` | Xử lý an toàn khi chỉ có remote parser nhưng bị cấm   | `20261008` | Đạt (200 mẫu) |
+
+---
+
+## 5. Phân định phạm vi trong K01 (Scope Demarcation)
+
+- **PBT-04 (@1convitt - Huỳnh)**: Kiểm thử từ điển ánh xạ tĩnh giữa định dạng MIME và phần mở rộng tệp trong `documents.parsers`.
+- **PBT-05 (@HubertPhung - Bo)**: Kiểm thử động cơ chế lựa chọn parser, chấm điểm và cách ly remote trong `ParserRegistry.get_parser_for_file`.
+- **Kết luận**: Hai bộ kiểm thử hoàn toàn độc lập về đối tượng, logic và phạm vi mã nguồn.
