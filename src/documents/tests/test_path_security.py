@@ -1,8 +1,4 @@
-"""Property-based tests for path containment security (PBT-03).
-
-Target: documents.file_handling.validate_path_in_root
-Scope: K01 Property-Based Testing
-"""
+"""Property-based tests for path containment (PBT-03)."""
 
 from __future__ import annotations
 
@@ -20,19 +16,16 @@ from documents.file_handling import validate_path_in_root
 if TYPE_CHECKING:
     from pathlib import Path
 
-pytestmark = [pytest.mark.django_db]
 
 _SAFE_COMPONENT_STRATEGY = st.text(
-    alphabet="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-",
+    alphabet="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-",
     min_size=1,
-    max_size=25,
-).filter(lambda x: x not in {".", ".."})
+    max_size=20,
+).map(lambda value: f"p_{value}")
 
 
 class TestPathSecurity:
-    """Hypothesis properties covering path containment invariants."""
-
-    @given(st.lists(_SAFE_COMPONENT_STRATEGY, min_size=1, max_size=5))
+    @given(parts=st.lists(_SAFE_COMPONENT_STRATEGY, min_size=1, max_size=5))
     @settings(
         max_examples=100,
         deadline=None,
@@ -43,14 +36,20 @@ class TestPathSecurity:
         tmp_path: Path,
         parts: list[str],
     ) -> None:
-        """Invariant 1: Any path resolving inside root is accepted."""
+        """PBT03-INV1: every generated descendant remains valid."""
         root = tmp_path / "storage_root"
-        root.mkdir(parents=True, exist_ok=True)
-
+        root.mkdir(exist_ok=True)
         target = root.joinpath(*parts)
+
         validate_path_in_root(target, root)
 
-    @given(st.integers(min_value=1, max_value=8))
+        assert target.resolve().is_relative_to(root.resolve())
+
+    @given(
+        prefix=st.lists(_SAFE_COMPONENT_STRATEGY, min_size=0, max_size=5),
+        extra_depth=st.integers(min_value=1, max_value=8),
+        filename=_SAFE_COMPONENT_STRATEGY,
+    )
     @settings(
         max_examples=100,
         deadline=None,
@@ -59,78 +58,102 @@ class TestPathSecurity:
     def test_traversal_outside_root_rejected(
         self,
         tmp_path: Path,
-        depth: int,
+        prefix: list[str],
+        extra_depth: int,
+        filename: str,
     ) -> None:
-        """Invariant 2: Path traversal escaping root raises UnsafeFilePathError."""
-        root = tmp_path / "sub" / "storage_root"
-        root.mkdir(parents=True, exist_ok=True)
+        """PBT03-INV2: traversal that resolves outside root is rejected."""
+        root = tmp_path / "storage_root"
+        root.mkdir(exist_ok=True)
+        target = root.joinpath(
+            *prefix,
+            *([".."] * (len(prefix) + extra_depth)),
+            filename,
+        )
 
-        traversal_parts = [".."] * (depth + 2) + ["escaped.pdf"]
-        target = root.joinpath(*traversal_parts)
-
+        assert not target.resolve().is_relative_to(root.resolve())
         with pytest.raises(UnsafeFilePathError):
             validate_path_in_root(target, root)
 
-    @given(st.lists(_SAFE_COMPONENT_STRATEGY, min_size=1, max_size=5))
+    @given(
+        sibling_suffix=_SAFE_COMPONENT_STRATEGY,
+        parts=st.lists(_SAFE_COMPONENT_STRATEGY, min_size=1, max_size=4),
+    )
     @settings(
         max_examples=100,
         deadline=None,
         suppress_health_check=[HealthCheck.function_scoped_fixture],
     )
-    def test_disjoint_paths_outside_root_rejected(
+    def test_prefix_confusion_outside_root_rejected(
         self,
         tmp_path: Path,
+        sibling_suffix: str,
         parts: list[str],
     ) -> None:
-        """Invariant 3: Paths resolving in an external hierarchy are rejected."""
+        """PBT03-INV2: a sibling sharing the root prefix is still outside."""
         root = tmp_path / "storage_root"
-        root.mkdir(parents=True, exist_ok=True)
-        outside = tmp_path / "other_hierarchy"
-        outside.mkdir(parents=True, exist_ok=True)
+        root.mkdir(exist_ok=True)
+        sibling = tmp_path / f"storage_root_{sibling_suffix}"
+        sibling.mkdir(exist_ok=True)
 
-        target = outside.joinpath(*parts)
         with pytest.raises(UnsafeFilePathError):
-            validate_path_in_root(target, root)
+            validate_path_in_root(sibling.joinpath(*parts), root)
 
-    def test_symlink_escaping_root_rejected(self, tmp_path: Path) -> None:
-        """Symlink invariant: Symlink resolving outside root raises UnsafeFilePathError."""
-        root = tmp_path / "root_sym"
-        outside = tmp_path / "outside_sym"
-        root.mkdir(parents=True, exist_ok=True)
-        outside.mkdir(parents=True, exist_ok=True)
-
-        secret_file = outside / "secret.pdf"
+    @given(filename=_SAFE_COMPONENT_STRATEGY)
+    @settings(
+        max_examples=50,
+        deadline=None,
+        suppress_health_check=[HealthCheck.function_scoped_fixture],
+    )
+    def test_symlink_escaping_root_rejected(
+        self,
+        tmp_path: Path,
+        filename: str,
+    ) -> None:
+        """PBT03-INV3: resolving an in-root symlink may not escape root."""
+        root = tmp_path / "storage_root"
+        outside = tmp_path / "outside"
+        root.mkdir(exist_ok=True)
+        outside.mkdir(exist_ok=True)
+        secret_file = outside / filename
         secret_file.touch()
+        symlink_in_root = root / "link_to_outside"
 
-        symlink_in_root = root / "link_to_outside.pdf"
         try:
             if symlink_in_root.is_symlink() or symlink_in_root.exists():
                 symlink_in_root.unlink()
             symlink_in_root.symlink_to(secret_file)
         except (OSError, NotImplementedError):
-            pytest.skip(
-                "Symlink creation not permitted or supported in this environment",
-            )
+            pytest.skip("Symlinks are unavailable on this platform")
 
         with pytest.raises(UnsafeFilePathError):
             validate_path_in_root(symlink_in_root, root)
 
-    def test_symlink_internal_to_root_accepted(self, tmp_path: Path) -> None:
-        """Symlink invariant: Symlink resolving inside root is accepted."""
-        root = tmp_path / "root_internal"
-        root.mkdir(parents=True, exist_ok=True)
-
-        internal_target = root / "original.pdf"
+    @given(filename=_SAFE_COMPONENT_STRATEGY)
+    @settings(
+        max_examples=50,
+        deadline=None,
+        suppress_health_check=[HealthCheck.function_scoped_fixture],
+    )
+    def test_symlink_internal_to_root_accepted(
+        self,
+        tmp_path: Path,
+        filename: str,
+    ) -> None:
+        """PBT03-INV3: resolving an in-root symlink stays valid."""
+        root = tmp_path / "storage_root"
+        root.mkdir(exist_ok=True)
+        internal_target = root / filename
         internal_target.touch()
+        internal_link = root / "link_internal"
 
-        internal_link = root / "link_internal.pdf"
         try:
             if internal_link.is_symlink() or internal_link.exists():
                 internal_link.unlink()
             internal_link.symlink_to(internal_target)
         except (OSError, NotImplementedError):
-            pytest.skip(
-                "Symlink creation not permitted or supported in this environment",
-            )
+            pytest.skip("Symlinks are unavailable on this platform")
 
         validate_path_in_root(internal_link, root)
+
+        assert internal_link.resolve().is_relative_to(root.resolve())
