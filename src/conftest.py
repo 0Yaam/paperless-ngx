@@ -7,9 +7,22 @@ the fixture body that needs it.
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 import pytest
+from hypothesis import HealthCheck
+from hypothesis import settings
+
+for _name, _count in [("dev", 50), ("ci", 100), ("recorded", 250), ("stress", 500)]:
+    settings.register_profile(
+        _name,
+        max_examples=_count,
+        deadline=None,
+        suppress_health_check=[HealthCheck.function_scoped_fixture],
+    )
+if "HYPOTHESIS_PROFILE" in os.environ:
+    settings.load_profile(os.environ["HYPOTHESIS_PROFILE"])
 
 if TYPE_CHECKING:
     from collections.abc import Generator
