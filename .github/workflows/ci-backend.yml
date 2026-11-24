@@ -1,11 +1,12 @@
 name: Backend Tests
 on:
   push:
-    branches-ignore:
-      - 'translations**'
+    branches:
+      - main
+      - dev
   pull_request:
-    branches-ignore:
-      - 'translations**'
+    branches:
+      - dev
   workflow_dispatch:
 concurrency:
   group: backend-${{ github.event.pull_request.number || github.ref }}
