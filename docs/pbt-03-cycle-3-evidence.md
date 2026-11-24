@@ -33,10 +33,30 @@ Bộ kiểm thử bao gồm 5 property tests độc lập tương ứng 3 nhóm 
 Hệ thống cấu hình 4 profile Hypothesis chuẩn phục vụ kiểm thử theo tầng (được khai báo tập trung trong `src/documents/tests/test_path_security.py`):
 
 ```python
-settings.register_profile("dev", max_examples=50, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
-settings.register_profile("ci", max_examples=100, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
-settings.register_profile("recorded", max_examples=250, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
-settings.register_profile("stress", max_examples=500, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+settings.register_profile(
+    "dev",
+    max_examples=50,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+settings.register_profile(
+    "ci",
+    max_examples=100,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+settings.register_profile(
+    "recorded",
+    max_examples=250,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+settings.register_profile(
+    "stress",
+    max_examples=500,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
 ```
 
 - **Profile chính của Cycle 3**: `recorded` với `max_examples=250` cho mỗi property (tổng cộng 1,250 test cases sinh ra trong một lần chạy).
@@ -143,7 +163,9 @@ Hypothesis được cấu hình giữ nguyên cơ chế shrinking mặc định.
 def flawed_validate_path_in_root(path: Path, root: Path) -> None:
     # Lỗi giả lập: Bỏ .resolve(), chỉ kiểm tra cú pháp lexically
     if not path.is_relative_to(root):
-        raise UnsafeFilePathError(f"Refusing to write file outside of root {root}: {path}.")
+        raise UnsafeFilePathError(
+            f"Refusing to write file outside of root {root}: {path}."
+        )
 ```
 
 Khi chạy kiểm thử `test_symlink_escaping_root_rejected` với hàm khuyết thiếu trên:
