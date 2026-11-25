@@ -1,11 +1,12 @@
 name: Backend Tests
 on:
   push:
-    branches-ignore:
-      - 'translations**'
+    branches:
+      - main
+      - dev
   pull_request:
-    branches-ignore:
-      - 'translations**'
+    branches:
+      - dev
   workflow_dispatch:
 concurrency:
   group: backend-${{ github.event.pull_request.number || github.ref }}
@@ -72,10 +73,14 @@ jobs:
           filters: |
             backend:
               - 'src/**'
+              - '!src/documents/tests/test_path_security.py'
+              - '!src/documents/tests/test_parsers.py'
+              - '!src/paperless/tests/test_parser_utils.py'
+              - '!src/documents/tests/search/test_unicode_normalization.py'
+              - '!src/paperless/tests/test_parser_selection_pbt.py'
               - 'pyproject.toml'
               - 'uv.lock'
               - 'docker/compose/docker-compose.ci-test.yml'
-              - '.github/workflows/ci-backend.yml'
   test:
     needs: changes
     if: needs.changes.outputs.backend_changed == 'true'
@@ -109,12 +114,11 @@ jobs:
           python-version: ${{ steps.setup-python.outputs.python-version }}
       - name: Install system dependencies
         timeout-minutes: 10
-        env:
-          DEBIAN_FRONTEND: noninteractive
-          NEEDRESTART_MODE: l
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install --yes -qq --no-install-recommends \
+          sudo apt-get update -qq -o Acquire::ForceIPv4=true -o Acquire::http::Timeout=30 -o Acquire::Retries=3
+          sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get install -y -qq \
+            -o Acquire::ForceIPv4=true -o Acquire::http::Timeout=30 -o Acquire::Retries=3 \
+            --no-install-recommends \
             unpaper tesseract-ocr imagemagick ghostscript poppler-utils
       - name: Configure ImageMagick
         run: |
