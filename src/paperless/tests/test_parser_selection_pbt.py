@@ -46,7 +46,9 @@ for _profile_name, _max_examples in [
         deadline=None,
         suppress_health_check=[HealthCheck.function_scoped_fixture],
     )
-settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default_pbt05"))
+_pbt05_settings = settings.get_profile(
+    os.environ.get("HYPOTHESIS_PROFILE", "default_pbt05"),
+)
 
 
 class MockParserSpec(NamedTuple):
@@ -154,7 +156,7 @@ class TestPbtParserSelection:
         target_mime="text/plain",
         allow_remote=False,
     )
-    @settings(deadline=None)
+    @_pbt05_settings
     def test_highest_scoring_eligible_parser_wins(
         self,
         specs: list[MockParserSpec],
@@ -212,7 +214,7 @@ class TestPbtParserSelection:
     )
     @example(tie_score=0, ext_count=1, builtin_count=1, target_mime="application/pdf")
     @example(tie_score=50, ext_count=2, builtin_count=3, target_mime="image/png")
-    @settings(deadline=None)
+    @_pbt05_settings
     def test_external_parser_wins_tie_with_builtin(
         self,
         tie_score: int,
@@ -284,7 +286,7 @@ class TestPbtParserSelection:
         local_scores=[None],
         target_mime="text/plain",
     )
-    @settings(deadline=None)
+    @_pbt05_settings
     def test_remote_parsers_excluded_when_not_allowed(
         self,
         remote_scores: list[int],
@@ -348,7 +350,7 @@ class TestPbtParserSelection:
         allow_remote=st.booleans(),
     )
     @example(target_mime="application/pdf", filename="empty.pdf", allow_remote=True)
-    @settings(deadline=None)
+    @_pbt05_settings
     def test_none_returned_when_registry_is_empty(
         self,
         target_mime: str,
@@ -396,7 +398,7 @@ class TestPbtParserSelection:
         target_mime="application/pdf",
         allow_remote=True,
     )
-    @settings(deadline=None)
+    @_pbt05_settings
     def test_none_returned_when_mime_unsupported_despite_valid_scores(
         self,
         specs: list[MockParserSpec],
@@ -450,7 +452,7 @@ class TestPbtParserSelection:
         ],
         allow_remote=True,
     )
-    @settings(deadline=None)
+    @_pbt05_settings
     def test_none_returned_when_matching_parsers_decline_with_none_score(
         self,
         specs: list[MockParserSpec],
@@ -501,7 +503,7 @@ class TestPbtParserSelection:
             ),
         ],
     )
-    @settings(deadline=None)
+    @_pbt05_settings
     def test_none_returned_when_only_remote_parsers_available_and_not_allowed(
         self,
         specs: list[MockParserSpec],
