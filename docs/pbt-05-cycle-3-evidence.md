@@ -8,7 +8,7 @@
 - Profile: `recorded` (`max_examples=250`, no deadline)
 - Seed: `20261008`
 
-The clean Cycle 3 branch contains only the PBT-05 test, workflow, and evidence
+The two clean PBT-05 commits contain only the test, workflow, and evidence
 changes. The unrelated backend-install and release-drafter commits from the
 original PR are excluded.
 
@@ -74,8 +74,8 @@ detection examples, not production defects.
 
 ## Assessment
 
-- All 1,750 generated cases passed in both the Linux artifact and the clean
-  focused run.
+- All 1,750 valid generated examples passed in both the Linux artifact and the
+  clean focused run.
 - The target function has complete statement and branch coverage.
 - The invalid counts are rejected generated combinations that do not satisfy
   each property's preconditions; they are not test failures.
